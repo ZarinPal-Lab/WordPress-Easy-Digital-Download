@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Plugin Name: ZarinPal Payment for EDD
  * Version: 1.1
@@ -7,30 +8,42 @@
  * Author: Ehsaan , Masoud Amini
  * Author: http://iehsan.ir/
  */
+
+
 if (!function_exists('edd_rial')) {
+
     function edd_rial($formatted, $currency, $price) {
         return $price . ' ریال';
     }
+
 }
 add_filter('edd_rial_currency_filter_after', 'edd_rial', 10, 3);
 @session_start();
+
 function zpw_edd_rial($formatted, $currency, $price) {
     return $price . 'ریال';
 }
+
 function add_zarinpal_gateway($gateways) {
     $gateways['zarinpal'] = array(
         'admin_label' => 'زرین‌پال',
         'checkout_label' => 'درگاه زرین‌پال'
     );
+
     return $gateways;
 }
+
 add_filter('edd_payment_gateways', 'add_zarinpal_gateway');
+
 function zp_cc_form() {
     return;
 }
+
 add_action('edd_zarinpal_cc_form', 'zp_cc_form');
+
 function zp_process($purchase_data) {
     global $edd_options;
+
     $payment_data = array(
         'price' => $purchase_data['price'],
         'date' => $purchase_data['date'],
@@ -43,17 +56,23 @@ function zp_process($purchase_data) {
         'status' => 'pending'
     );
     $payment = edd_insert_payment($payment_data);
+
     if ($payment) {
         delete_transient('edd_zarinpal_record');
         set_transient('edd_zarinpal_record', $payment);
+
         $_SESSION['edd_zarinpal_record'] = $payment;
         $callback = add_query_arg('verify', 'zarinpal', get_permalink($edd_options['success_page']));
         $amount = intval($payment_data['price']) / 10;
         $description = 'پرداخت صورت حساب ' . $purchase_data['purchase_key'];
         $merchant = $edd_options['zp_merchant'];
+
         $endpoint = ( $edd_options['zp_deserver'] == '1' ) ? 'https://de.zarinpal.com/pg/services/WebGate/wsdl' : 'https://ir.zarinpal.com/pg/services/WebGate/wsdl';
-        $accesspage = ( $edd_options['zp_webgate'] == '1' ) ? 'https://www.zarinpal.com/pg/StartPay/%s' : 'https://www.zarinpal.com/pg/StartPay/%s/ZarinGate';
+
+
         $client = new SoapClient($endpoint, array('encoding' => 'UTF-8'));
+
+
         $data = array(
             'MerchantID' => $merchant,
             'Amount' => $amount,
@@ -62,9 +81,37 @@ function zp_process($purchase_data) {
             'CallbackURL' => $callback
         );
         $result = $client->PaymentRequest($data);
+
         edd_insert_payment_note($payment, 'کد پاسخ زرین پال: ' . $result->Status . ' و کد پرداخت: ' . $result->Authority);
         if ($result->Status == 100) {
-            wp_redirect(sprintf($accesspage, $result->Authority));
+			echo ('<table>
+				<tr>
+					<td><b>اطلاعات فاکتور:</b></td>
+					<td></td>
+				</tr>
+				<br>
+				<tr>
+					<td>نام:</td>
+					<td>'.$_POST['edd_first'].'</td>
+				</tr>
+				<tr>
+					<td>نام خانوادگی:</td>
+					<td>'.$_POST['edd_last'].'</td>
+				</tr>
+				<tr>
+					<td>ایمیل:</td>
+					<td>'.$_POST['edd_email'].'</td>
+				</tr>
+				<tr>
+					<td>مبلغ:</td>
+					<td>'.($amount*10).' ریال</td>
+				</tr>
+			</table>
+			<script type="text/javascript" src="https://cdn.zarinpal.com/zarinak/v1/checkout.js"></script>
+				<script>
+				Zarinak.setAuthority( ' . $result->Authority . ');
+				Zarinak.open();
+				</script>');
             exit;
         } else {
             wp_die('خطای ' . $result->Status . ': در اتصال به درگاه پرداخت مشکلی پیش آمد');
@@ -74,16 +121,23 @@ function zp_process($purchase_data) {
         edd_send_back_to_checkout('?payment-mode=' . $purchase_data['post_data']['edd-gateway']);
     }
 }
+
 add_action('edd_gateway_zarinpal', 'zp_process');
+
 function zp_verify() {
     global $edd_options;
     if (isset($_GET['verify']) && $_GET['verify'] == 'zarinpal' && isset($_GET['Status'])) {
+
+
         $payment_id = $_SESSION['edd_zarinpal_record'];
         // get_transient( 'edd_zarinpal_record' );
         //delete_transient( 'edd_zarinpal_record' );
+
         if ($_GET['Status'] == 'OK') {
             $endpoint = ( $edd_options['zp_deserver'] == '1' ) ? 'https://de.zarinpal.com/pg/services/WebGate/wsdl' : 'https://ir.zarinpal.com/pg/services/WebGate/wsdl';
+
             $client = new SoapClient($endpoint, array('encoding' => 'UTF-8'));
+
             //$amount = intval( edd_get_payment_amount( $payment_id ) ) / 10;
             $amount = intval(edd_get_payment_amount($payment_id)) / 10;
             $result = $client->PaymentVerification(array(
@@ -110,7 +164,9 @@ function zp_verify() {
         }
     }
 }
+
 add_action('init', 'zp_verify');
+
 function zp_settings($settings) {
     $zarinpal_options = array(
         array(
@@ -125,18 +181,14 @@ function zp_settings($settings) {
             'desc' => 'کد درگاه که از سایت زرین‌پال دریافت کرده‌اید را وارد کنید'
         ),
         array(
-            'id' => 'zp_webgate',
-            'type' => 'checkbox',
-            'name' => 'استفاده از درگاه غیرمستقیم',
-            'desc' => 'برای استفاده از درگاه وب‌گیت (غیرمستقیم) این گزینه را فعال کنید'
-        ),
-        array(
             'id' => 'zp_deserver',
             'type' => 'checkbox',
             'name' => 'استفاده از نود آلمان',
             'desc' => 'برای استفاده از سرور لمان این گزینه را فعال کنید. اگر هاستینگ شما خارجی است، پیشنهاد می‌کنیم این گزینه را فعال کنید'
         )
     );
+
     return array_merge($settings, $zarinpal_options);
 }
+
 add_filter('edd_settings_gateways', 'zp_settings');
